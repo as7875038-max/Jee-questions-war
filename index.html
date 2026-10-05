@@ -1,1 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <title>JEE Question War</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+</head>
+
+<body>
+
+<!-- LOGIN -->
+
+<div id="loginScreen" class="screen">
+
+  <div class="login-card">
+
+    <div class="logo">⚔️</div>
+
+    <h1>JEE QUESTION WAR</h1>
+
+    <p>Compete. Solve. Rank. Survive.</p>
+
+    <button id="googleLogin" class="google-btn">
+      🔐 Continue with Google
+    </button>
+
+  </div>
+
+</div>
+
+
+<!-- APP -->
+
+<div id="app" class="hidden">
+
+  <header>
+
+    <div>
+      <h1>JEE QUESTION WAR</h1>
+      <span id="phaseText">Phase 1</span>
+    </div>
+
+    <div class="user-area">
+      <span id="userName"></span>
+      <button id="logoutBtn">Logout</button>
+    </div>
+
+  </header>
+
+
+  <!-- NAV -->
+
+  <nav>
+
+    <button class="nav-btn active" data-page="dashboard">
+      🏠 Dashboard
+    </button>
+
+    <button class="nav-btn" data-page="challenge">
+      🎯 Challenge
+    </button>
+
+    <button class="nav-btn" data-page="ranking">
+      🏆 Rank
+    </button>
+
+    <button class="nav-btn" data-page="profile">
+      👤 Profile
+    </button>
+
+    <button id="adminNavBtn"
+            class="nav-btn hidden"
+            data-page="admin">
+      ⚙️ Admin
+    </button>
+
+  </nav>
+
+
+  <main>
+
+
+    <!-- DASHBOARD -->
+
+    <section id="dashboard" class="page">
+
+      <div class="hero">
+
+        <p class="small">CURRENT CHALLENGE</p>
+
+        <h2 id="dashboardPhase">Phase 1</h2>
+
+        <h3 id="dashboardDay">Day 1</h3>
+
+        <div id="dashboardJoinNotice" class="dashboard-notice hidden">
+          ⚔️ You haven't joined the challenge yet.
+          <button id="goJoinBtn">JOIN NOW</button>
+        </div>
+
+      </div>
+
+
+      <div class="stats-grid">
+
+        <div class="stat-card">
+          <span>❤️ Lives</span>
+          <strong id="lives">-</strong>
+        </div>
+
+        <div class="stat-card">
+          <span>🔥 Questions</span>
+          <strong id="myTotal">0</strong>
+        </div>
+
+        <div class="stat-card">
+          <span>🏆 Rank</span>
+          <strong id="myRank">-</strong>
+        </div>
+
+        <div class="stat-card">
+          <span>🟢 Status</span>
+          <strong id="myStatus">NOT JOINED</strong>
+        </div>
+
+      </div>
+
+
+      <div class="quote">
+        "Don't compete with yesterday's version of yourself.
+        Compete with the leaderboard."
+      </div>
+
+    </section>
+
+
+    <!-- CHALLENGE -->
+
+    <section id="challenge" class="page hidden">
+
+      <!-- JOIN -->
+
+      <div id="joinBox" class="join-box">
+
+        <div class="join-icon">⚔️</div>
+
+        <h2>Join JEE Question War</h2>
+
+        <p>
+          Enter the Challenge Code given by the administrator
+          to participate.
+        </p>
+
+        <input
+          type="text"
+          id="challengeCode"
+          placeholder="Enter Challenge Code"
+          autocomplete="off"
+          maxlength="30"
+        >
+
+        <button id="joinChallengeBtn" class="submit-btn">
+          JOIN CHALLENGE
+        </button>
+
+        <small>
+          Example: JQW2026
+        </small>
+
+      </div>
+
+
+      <div id="joinedBadge" class="joined-badge hidden">
+        🟢 YOU ARE JOINED IN THIS CHALLENGE
+      </div>
+
+
+      <div class="section-heading">
+
+        <p class="small">TODAY'S CHALLENGE</p>
+
+        <h2 id="challengeTitle">
+          Phase 1 • Day 1
+        </h2>
+
+      </div>
+
+
+      <div class="target-grid">
+
+        <div class="subject physics">
+          <span>⚡ Physics</span>
+          <strong id="physicsTarget">30</strong>
+          <small>Minimum Questions</small>
+        </div>
+
+        <div class="subject chemistry">
+          <span>🧪 Chemistry</span>
+          <strong id="chemistryTarget">30</strong>
+          <small>Minimum Questions</small>
+        </div>
+
+        <div class="subject maths">
+          <span>📐 Mathematics</span>
+          <strong id="mathsTarget">25</strong>
+          <small>Minimum Questions</small>
+        </div>
+
+      </div>
+
+
+      <!-- SUBMIT -->
+
+      <div class="submit-card">
+
+        <h3>Enter Today's Questions</h3>
+
+        <label>Physics</label>
+        <input id="physicsInput"
+               type="number"
+               min="0"
+               value="0">
+
+        <label>Chemistry</label>
+        <input id="chemistryInput"
+               type="number"
+               min="0"
+               value="0">
+
+        <label>Mathematics</label>
+        <input id="mathsInput"
+               type="number"
+               min="0"
+               value="0">
+
+        <div class="total-box">
+          Total:
+          <strong id="liveTotal">0</strong>
+        </div>
+
+        <button id="submitBtn" class="submit-btn">
+          SUBMIT TODAY'S SCORE
+        </button>
+
+        <p id="submitMessage"></p>
+
+      </div>
+
+    </section>
+
+
+    <!-- RANKING -->
+
+    <section id="ranking" class="page hidden">
+
+      <div class="section-heading">
+
+        <p class="small">LIVE LEADERBOARD</p>
+
+        <h2>🏆 Question Ladder</h2>
+
+      </div>
+
+      <div id="leaderboard"></div>
+
+    </section>
+
+
+    <!-- PROFILE -->
+
+    <section id="profile" class="page hidden">
+
+      <div class="profile-card">
+
+        <div class="profile-avatar">
+          👤
+        </div>
+
+        <h2 id="profileName">Aspirant</h2>
+
+        <p id="profileEmail"></p>
+
+        <label>Display Name</label>
+
+        <input id="nameInput" type="text">
+
+        <button id="saveNameBtn" class="submit-btn">
+          SAVE NAME
+        </button>
+
+      </div>
+
+    </section>
+
+
+    <!-- ADMIN -->
+
+    <section id="admin" class="page hidden">
+
+      <div class="section-heading">
+
+        <p class="small">ADMIN CONTROL CENTER</p>
+
+        <h2>⚙️ Challenge Control</h2>
+
+      </div>
+
+
+      <!-- SETTINGS -->
+
+      <div class="admin-card">
+
+        <h3>⚙️ Challenge Settings</h3>
+
+        <label>Challenge Code</label>
+        <input id="adminJoinCode" type="text">
+
+        <label>Phase Name</label>
+        <input id="adminPhaseName" type="text">
+
+        <div class="admin-grid">
+
+          <div>
+            <label>Current Day</label>
+            <input id="adminDay" type="number" min="1">
+          </div>
+
+          <div>
+            <label>Phase Start Day</label>
+            <input id="adminStartDay" type="number" min="1">
+          </div>
+
+          <div>
+            <label>Phase End Day</label>
+            <input id="adminEndDay" type="number" min="1">
+          </div>
+
+        </div>
+
+
+        <h4>Daily Minimum Targets</h4>
+
+        <div class="admin-grid">
+
+          <div>
+            <label>⚡ Physics</label>
+            <input id="adminPhysics" type="number" min="0">
+          </div>
+
+          <div>
+            <label>🧪 Chemistry</label>
+            <input id="adminChemistry" type="number" min="0">
+          </div>
+
+          <div>
+            <label>📐 Maths</label>
+            <input id="adminMaths" type="number" min="0">
+          </div>
+
+        </div>
+
+
+        <label>Starting Lives</label>
+        <input id="adminLives" type="number" min="1">
+
+
+        <button id="saveChallengeBtn" class="submit-btn">
+          💾 SAVE CHALLENGE SETTINGS
+        </button>
+
+        <p id="adminMessage"></p>
+
+      </div>
+
+
+      <!-- PARTICIPANTS -->
+
+      <div class="admin-card">
+
+        <div class="admin-heading-row">
+
+          <div>
+            <h3>👥 Participants</h3>
+            <p class="admin-muted">
+              Manage challenge participants.
+            </p>
+          </div>
+
+          <button id="refreshParticipantsBtn"
+                  class="small-btn">
+            🔄 Refresh
+          </button>
+
+        </div>
+
+        <div id="participantsList"></div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+</div>
+
+
+<script src="app.js"></script>
+
+</body>
+</html>
