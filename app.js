@@ -1,57 +1,30 @@
 // ======================================================
-// FIREBASE CONFIG
+// THE 3AM COMMITMENT QUESTION WAR — V2
 // ======================================================
 
 const firebaseConfig = {
-
   apiKey: "AIzaSyDlZQkLfxYp76tcPvTIl6Le7_lijxxZ2Hw",
-
-  authDomain:
-    "the-3-commitment-question-war.firebaseapp.com",
-
-  projectId:
-    "the-3-commitment-question-war",
-
-  storageBucket:
-    "the-3-commitment-question-war.firebasestorage.app",
-
-  messagingSenderId:
-    "120443792205",
-
-  appId:
-    "1:120443792205:web:bf7f29377c5dae478fe504",
-
-  measurementId:
-    "G-YK9XB6M7EF"
+  authDomain: "the-3-commitment-question-war.firebaseapp.com",
+  projectId: "the-3-commitment-question-war",
+  storageBucket: "the-3-commitment-question-war.firebasestorage.app",
+  messagingSenderId: "120443792205",
+  appId: "1:120443792205:web:bf7f29377c5dae478fe504",
+  measurementId: "G-YK9XB6M7EF"
 };
 
-
-// ======================================================
-// ADMIN EMAIL
-// ======================================================
-
-// IMPORTANT:
-// Yahan apne Google login wale Gmail ko daalo.
-
 const ADMIN_EMAILS = [
- "ankushsah950@gmail.com" 
+  "ankushsah950@gmail.com"
 ];
-
-
-// ======================================================
-// FIREBASE
-// ======================================================
 
 firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
 const db = firebase.firestore();
+const storage = firebase.storage();
 
 auth.setPersistence(
   firebase.auth.Auth.Persistence.LOCAL
-).catch(error => {
-  console.error(error);
-});
+).catch(console.error);
 
 
 // ======================================================
@@ -59,229 +32,424 @@ auth.setPersistence(
 // ======================================================
 
 let challenge = {
-
   id: "main",
-
   joinCode: "JQW2026",
-
   phaseName: "Phase 1",
 
-  day: 1,
-
-  phaseStartDay: 1,
-
-  phaseEndDay: 7,
+  startDate: "2026-10-07",
+  endDate: "2026-10-13",
 
   physicsTarget: 30,
-
   chemistryTarget: 30,
-
   mathsTarget: 25,
 
   startingLives: 2
-
 };
 
 
 // ======================================================
-// CURRENT USER
+// GLOBAL STATE
 // ======================================================
 
 let currentUser = null;
 let currentProfile = null;
 
+let currentChallengeDay = null;
+let currentChallengeDate = null;
+
+let chatUnsubscribe = null;
+let voiceRecorder = null;
+let voiceChunks = [];
+
+const inputIds = [
+  "physicsInput",
+  "chemistryInput",
+  "mathsInput"
+];
+
 
 // ======================================================
-// ADMIN CHECK
+// HELPERS
 // ======================================================
 
-function isAdmin() {
+const $ = id => document.getElementById(id);
 
-  if (!currentUser || !currentUser.email)
-    return false;
+function isAdmin(){
 
-  return ADMIN_EMAILS
-    .map(email => email.toLowerCase().trim())
-    .includes(currentUser.email.toLowerCase().trim());
+  return !!(
+    currentUser?.email &&
+    ADMIN_EMAILS
+      .map(x => x.toLowerCase().trim())
+      .includes(currentUser.email.toLowerCase().trim())
+  );
+}
+
+
+function escapeHTML(text){
+
+  const div = document.createElement("div");
+
+  div.textContent = text ?? "";
+
+  return div.innerHTML;
+}
+
+
+function pad(n){
+
+  return String(n).padStart(2,"0");
+
+}
+
+
+function formatDate(dateString){
+
+  if(!dateString) return "—";
+
+  const [y,m,d] = dateString
+    .split("-")
+    .map(Number);
+
+  return new Intl.DateTimeFormat(
+    "en-IN",
+    {
+      day:"numeric",
+      month:"long",
+      year:"numeric",
+      timeZone:"Asia/Kolkata"
+    }
+  ).format(
+    new Date(Date.UTC(y,m-1,d,12))
+  );
+}
+
+
+function dateUTC(dateString){
+
+  const [y,m,d] = dateString
+    .split("-")
+    .map(Number);
+
+  return Date.UTC(y,m-1,d);
+}
+
+
+function dateStringUTC(ms){
+
+  const d = new Date(ms);
+
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+}
+
+
+function diffDays(a,b){
+
+  return Math.round(
+    (dateUTC(b)-dateUTC(a))/86400000
+  );
+
 }
 
 
 // ======================================================
-// GOOGLE LOGIN
+// 3 AM INDIA CLOCK
 // ======================================================
 
-document
-  .getElementById("googleLogin")
-  .addEventListener("click", async () => {
+function challengeClock(){
 
-    try {
+  const now = new Date();
 
-      const provider =
-        new firebase.auth.GoogleAuthProvider();
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone:"Asia/Kolkata",
+        year:"numeric",
+        month:"2-digit",
+        day:"2-digit",
+        hour:"2-digit",
+        minute:"2-digit",
+        second:"2-digit",
+        hourCycle:"h23"
+      }
+    ).formatToParts(now);
 
-      await auth.signInWithPopup(provider);
+  const o = {};
 
-    }
+  parts.forEach(
+    p => o[p.type] = p.value
+  );
 
-    catch(error) {
+  let date =
+    `${o.year}-${o.month}-${o.day}`;
 
-      console.error(error);
+  const hour = Number(o.hour);
 
-      alert(error.message);
+  // Before 3 AM belongs to previous challenge day
+  if(hour < 3){
 
-    }
-
-  });
-
-
-// ======================================================
-// LOGOUT
-// ======================================================
-
-document
-  .getElementById("logoutBtn")
-  .addEventListener("click", () => {
-
-    auth.signOut();
-
-  });
-
-
-// ======================================================
-// AUTH
-// ======================================================
-
-auth.onAuthStateChanged(async user => {
-
-  if(!user) {
-
-    currentUser = null;
-    currentProfile = null;
-
-    document
-      .getElementById("loginScreen")
-      .classList.remove("hidden");
-
-    document
-      .getElementById("app")
-      .classList.add("hidden");
-
-    return;
+    date =
+      dateStringUTC(
+        dateUTC(date)-86400000
+      );
 
   }
 
-
-  currentUser = user;
-
-
-  document
-    .getElementById("loginScreen")
-    .classList.add("hidden");
-
-  document
-    .getElementById("app")
-    .classList.remove("hidden");
-
-
-  try {
-
-    await loadChallenge();
-
-    await loadUser();
-
-    updateChallengeUI();
-
-    updateAdminVisibility();
-
-    updateJoinUI();
-
-    await checkTodaySubmission();
-
-    await loadLeaderboard();
-
-    if(isAdmin()) {
-
-      loadAdminFields();
-
-      loadParticipants();
-
-    }
-
-  }
-
-  catch(error) {
-
-    console.error(error);
-
-    alert(
-      "Something went wrong. Check Firebase settings."
-    );
-
-  }
-
-});
-
-
-// ======================================================
-// LOAD CHALLENGE
-// ======================================================
-
-async function loadChallenge() {
-
-  const ref =
-    db.collection("challenges").doc(challenge.id);
-
-  const snap =
-    await ref.get();
-
-
-  if(!snap.exists) {
-
-    await ref.set({
-
-      ...challenge,
-
-      createdAt:
-        firebase.firestore.FieldValue.serverTimestamp(),
-
-      updatedAt:
-        firebase.firestore.FieldValue.serverTimestamp()
-
-    });
-
-    return;
-
-  }
-
-
-  const data = snap.data();
-
-  challenge = {
-
-    ...challenge,
-    ...data
-
+  return {
+    challengeDate: date,
+    now,
+    hour
   };
 
 }
 
 
 // ======================================================
-// LOAD USER
+// AUTOMATIC DAY CALCULATION
 // ======================================================
 
-async function loadUser() {
+function calculateDay(){
+
+  const clock = challengeClock();
+
+  currentChallengeDate =
+    clock.challengeDate;
+
+  if(
+    !challenge.startDate ||
+    !challenge.endDate
+  ){
+
+    return {
+      day:null,
+      state:"NOT_CONFIGURED"
+    };
+
+  }
+
+  if(
+    currentChallengeDate <
+    challenge.startDate
+  ){
+
+    return {
+      day:0,
+      state:"NOT_STARTED"
+    };
+
+  }
+
+  if(
+    currentChallengeDate >
+    challenge.endDate
+  ){
+
+    return {
+      day:
+        diffDays(
+          challenge.startDate,
+          challenge.endDate
+        ) + 1,
+
+      state:"ENDED"
+    };
+
+  }
+
+  return {
+
+    day:
+      diffDays(
+        challenge.startDate,
+        currentChallengeDate
+      ) + 1,
+
+    state:"ACTIVE"
+
+  };
+
+}
+
+
+function dayLabel(){
+
+  const x = calculateDay();
+
+  if(x.state === "ACTIVE")
+    return `Day ${x.day}`;
+
+  if(x.state === "NOT_STARTED")
+    return "Not Started";
+
+  if(x.state === "ENDED")
+    return "Challenge Ended";
+
+  return "Not Configured";
+}
+
+
+function submissionId(uid,day){
+
+  return `${uid}_${challenge.id}_${day}`;
+
+}
+
+
+function lifeEventId(uid,day){
+
+  return `${uid}_${challenge.id}_${day}`;
+
+}
+
+
+// ======================================================
+// TOAST
+// ======================================================
+
+function toast(message,type=""){
+
+  let container =
+    $("toastContainer");
+
+  if(!container){
+
+    container =
+      document.createElement("div");
+
+    container.id =
+      "toastContainer";
+
+    document.body.appendChild(container);
+
+  }
+
+  const el =
+    document.createElement("div");
+
+  el.className =
+    `toast ${type}`;
+
+  el.textContent =
+    message;
+
+  container.appendChild(el);
+
+  setTimeout(
+    () => el.remove(),
+    3500
+  );
+
+}
+
+
+// ======================================================
+// AUTH
+// ======================================================
+
+async function login(){
+
+  const provider =
+    new firebase.auth.GoogleAuthProvider();
+
+  try{
+
+    await auth.signInWithPopup(provider);
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      error.message ||
+      "Login failed",
+      "error"
+    );
+
+  }
+
+}
+
+
+async function logout(){
+
+  if(chatUnsubscribe)
+    chatUnsubscribe();
+
+  await auth.signOut();
+
+}
+
+
+window.login = login;
+window.logout = logout;
+
+
+// ======================================================
+// LOAD CHALLENGE
+// ======================================================
+
+async function loadChallenge(){
+
+  try{
+
+    const snap =
+      await db
+        .collection("challenges")
+        .doc("main")
+        .get();
+
+    if(snap.exists){
+
+      challenge = {
+        ...challenge,
+        ...snap.data()
+      };
+
+    }else{
+
+      await db
+        .collection("challenges")
+        .doc("main")
+        .set(challenge);
+
+    }
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Challenge load error",
+      "error"
+    );
+
+  }
+
+}
+
+
+// ======================================================
+// USER PROFILE
+// ======================================================
+
+async function loadUser(){
+
+  if(!currentUser)
+    return;
 
   const ref =
-    db.collection("users").doc(currentUser.uid);
+    db
+      .collection("users")
+      .doc(currentUser.uid);
 
   const snap =
     await ref.get();
 
+  if(!snap.exists){
 
-  if(!snap.exists) {
+    currentProfile = {
 
-    const newUser = {
+      uid:currentUser.uid,
 
       name:
         currentUser.displayName ||
@@ -293,797 +461,864 @@ async function loadUser() {
       photoURL:
         currentUser.photoURL || "",
 
-      challengeId:
-        null,
+      challengeId:null,
 
-      lives:
-        challenge.startingLives,
+      status:"NOT_JOINED",
 
-      status:
-        "NOT_JOINED",
+      joinRequestStatus:"NONE",
 
-      totalQuestions:
-        0,
+      lives:0,
 
-      createdAt:
+      totalQuestions:0,
+
+      physics:0,
+
+      chemistry:0,
+
+      maths:0,
+
+      joinedAt:
         firebase.firestore.FieldValue.serverTimestamp()
 
     };
 
+    await ref.set(
+      currentProfile
+    );
 
-    await ref.set(newUser);
-
-    currentProfile = newUser;
-
-  }
-
-  else {
+  }else{
 
     currentProfile = snap.data();
 
   }
 
-
-  updateUserUI();
-
 }
 
 
 // ======================================================
-// USER UI
+// JOIN STATUS
 // ======================================================
 
-function updateUserUI() {
-
-  const name =
-    currentProfile?.name || "Aspirant";
-
-
-  document.getElementById("userName")
-    .innerText = name;
-
-  document.getElementById("profileName")
-    .innerText = name;
-
-  document.getElementById("profileEmail")
-    .innerText =
-      currentProfile?.email || currentUser.email || "";
-
-  document.getElementById("nameInput")
-    .value = name;
-
-
-  document.getElementById("lives")
-    .innerText =
-      currentProfile?.lives ?? "-";
-
-  document.getElementById("myTotal")
-    .innerText =
-      currentProfile?.totalQuestions || 0;
-
-  document.getElementById("myStatus")
-    .innerText =
-      currentProfile?.status || "NOT JOINED";
-
-}
-
-
-// ======================================================
-// JOIN CHECK
-// ======================================================
-
-function isJoined() {
+function isJoined(){
 
   return (
     currentProfile &&
     currentProfile.challengeId === challenge.id &&
+    currentProfile.status !== "KICKED" &&
     currentProfile.status !== "NOT_JOINED"
   );
 
 }
 
 
-// ======================================================
-// UPDATE JOIN UI
-// ======================================================
+function isKicked(){
 
-function updateJoinUI() {
+  return currentProfile?.status === "KICKED";
 
-  const joined =
-    isJoined();
+}
 
 
-  const joinBox =
-    document.getElementById("joinBox");
+function isEliminated(){
 
-  const badge =
-    document.getElementById("joinedBadge");
-
-
-  if(joined) {
-
-    joinBox.classList.add("hidden");
-
-    badge.classList.remove("hidden");
-
-  }
-
-  else {
-
-    joinBox.classList.remove("hidden");
-
-    badge.classList.add("hidden");
-
-  }
-
-
-  const notice =
-    document.getElementById("dashboardJoinNotice");
-
-
-  if(notice) {
-
-    if(joined) {
-
-      notice.classList.add("hidden");
-
-    }
-
-    else {
-
-      notice.classList.remove("hidden");
-
-    }
-
-  }
+  return currentProfile?.status === "ELIMINATED";
 
 }
 
 
 // ======================================================
-// JOIN CHALLENGE
+// JOIN REQUEST
 // ======================================================
 
-document
-  .getElementById("joinChallengeBtn")
-  .addEventListener("click", joinChallenge);
+async function requestJoin(){
 
-
-async function joinChallenge() {
-
-  if(!currentUser)
+  if(!currentUser || !currentProfile)
     return;
 
+  if(isKicked()){
+
+    toast(
+      "You have been kicked. Admin must unkick you first.",
+      "error"
+    );
+
+    return;
+
+  }
 
   const code =
-    document
-      .getElementById("challengeCode")
-      .value
-      .trim()
-      .toUpperCase();
+    ($("joinCodeInput")?.value || "")
+      .trim();
 
+  if(!code){
 
-  if(!code) {
-
-    alert("Please enter Challenge Code.");
-
-    return;
-
-  }
-
-
-  if(code !== challenge.joinCode.toUpperCase()) {
-
-    alert("❌ Invalid Challenge Code.");
+    toast(
+      "Enter the challenge code.",
+      "error"
+    );
 
     return;
 
   }
 
+  if(code !== challenge.joinCode){
 
-  if(isJoined()) {
-
-    alert("You are already joined.");
+    toast(
+      "Wrong challenge code.",
+      "error"
+    );
 
     return;
 
   }
 
+  if(isJoined()){
 
-  try {
+    toast(
+      "You are already in the challenge."
+    );
+
+    return;
+
+  }
+
+  if(
+    currentProfile.joinRequestStatus ===
+    "PENDING"
+  ){
+
+    toast(
+      "Your join request is already pending."
+    );
+
+    return;
+
+  }
+
+  try{
+
+    await db
+      .collection("joinRequests")
+      .doc(
+        `${currentUser.uid}_${challenge.id}`
+      )
+      .set({
+
+        uid:currentUser.uid,
+
+        challengeId:challenge.id,
+
+        name:
+          currentProfile.name,
+
+        email:
+          currentProfile.email,
+
+        photoURL:
+          currentProfile.photoURL || "",
+
+        status:"PENDING",
+
+        createdAt:
+          firebase.firestore.FieldValue.serverTimestamp()
+
+      });
 
     await db
       .collection("users")
       .doc(currentUser.uid)
       .update({
 
-        challengeId:
-          challenge.id,
-
-        lives:
-          challenge.startingLives,
-
-        status:
-          "ACTIVE",
-
-        totalQuestions:
-          0,
-
-        joinedAt:
-          firebase.firestore.FieldValue.serverTimestamp()
+        joinRequestStatus:"PENDING"
 
       });
 
+    currentProfile.joinRequestStatus =
+      "PENDING";
 
-    currentProfile.challengeId =
-      challenge.id;
+    renderAll();
 
-    currentProfile.lives =
-      challenge.startingLives;
+    toast(
+      "Join request sent to admin.",
+      "success"
+    );
 
-    currentProfile.status =
-      "ACTIVE";
-
-    currentProfile.totalQuestions =
-      0;
-
-
-    updateUserUI();
-    updateJoinUI();
-
-
-    document
-      .getElementById("challengeCode")
-      .value = "";
-
-
-    alert("🎉 Welcome to JEE Question War!");
-
-    await loadLeaderboard();
-
-  }
-
-  catch(error) {
+  }catch(error){
 
     console.error(error);
 
-    alert(error.message);
-
-  }
-
-}
-
-
-// ======================================================
-// DASHBOARD JOIN BUTTON
-// ======================================================
-
-document
-  .getElementById("goJoinBtn")
-  .addEventListener("click", () => {
-
-    document
-      .querySelector('[data-page="challenge"]')
-      .click();
-
-  });
-
-
-// ======================================================
-// CHALLENGE UI
-// ======================================================
-
-function updateChallengeUI() {
-
-  document.getElementById("phaseText")
-    .innerText =
-      challenge.phaseName;
-
-
-  document.getElementById("dashboardPhase")
-    .innerText =
-      challenge.phaseName;
-
-
-  document.getElementById("dashboardDay")
-    .innerText =
-      "Day " + challenge.day;
-
-
-  document.getElementById("challengeTitle")
-    .innerText =
-      challenge.phaseName +
-      " • Day " +
-      challenge.day;
-
-
-  document.getElementById("physicsTarget")
-    .innerText =
-      challenge.physicsTarget;
-
-
-  document.getElementById("chemistryTarget")
-    .innerText =
-      challenge.chemistryTarget;
-
-
-  document.getElementById("mathsTarget")
-    .innerText =
-      challenge.mathsTarget;
-
-}
-
-
-// ======================================================
-// LIVE TOTAL
-// ======================================================
-
-const inputIds = [
-
-  "physicsInput",
-  "chemistryInput",
-  "mathsInput"
-
-];
-
-
-inputIds.forEach(id => {
-
-  document
-    .getElementById(id)
-    .addEventListener(
-      "input",
-      updateTotal
+    toast(
+      "Could not send request.",
+      "error"
     );
 
-});
-
-
-function updateTotal() {
-
-  const p =
-    Number(
-      document.getElementById("physicsInput").value
-    ) || 0;
-
-
-  const c =
-    Number(
-      document.getElementById("chemistryInput").value
-    ) || 0;
-
-
-  const m =
-    Number(
-      document.getElementById("mathsInput").value
-    ) || 0;
-
-
-  document
-    .getElementById("liveTotal")
-    .innerText =
-      p + c + m;
-
-}
-
-
-// ======================================================
-// TODAY SUBMISSION CHECK
-// ======================================================
-
-async function checkTodaySubmission() {
-
-  if(!currentUser || !isJoined())
-    return;
-
-
-  const docId =
-    currentUser.uid +
-    "_" +
-    challenge.id +
-    "_" +
-    challenge.day;
-
-
-  const snap =
-    await db
-      .collection("submissions")
-      .doc(docId)
-      .get();
-
-
-  if(snap.exists) {
-
-    disableSubmission();
-
-    const data = snap.data();
-
-    document
-      .getElementById("submitMessage")
-      .innerText =
-        "✅ Today's score is already submitted.";
-
-    document
-      .getElementById("physicsInput")
-      .value = data.physics || 0;
-
-    document
-      .getElementById("chemistryInput")
-      .value = data.chemistry || 0;
-
-    document
-      .getElementById("mathsInput")
-      .value = data.maths || 0;
-
-    updateTotal();
-
-  }
-
-  else {
-
-    enableSubmission();
-
   }
 
 }
 
 
-// ======================================================
-// DISABLE / ENABLE SUBMISSION
-// ======================================================
-
-function disableSubmission() {
-
-  inputIds.forEach(id => {
-
-    document.getElementById(id).disabled = true;
-
-  });
-
-
-  document.getElementById("submitBtn").disabled = true;
-
-}
-
-
-function enableSubmission() {
-
-  inputIds.forEach(id => {
-
-    document.getElementById(id).disabled = false;
-
-  });
-
-
-  document.getElementById("submitBtn").disabled = false;
-
-}
+window.requestJoin = requestJoin;
 
 
 // ======================================================
-// SUBMIT SCORE
+// APPROVE JOIN
 // ======================================================
 
-document
-  .getElementById("submitBtn")
-  .addEventListener(
-    "click",
-    submitScore
-  );
+async function approveJoin(uid,requestId){
 
-
-async function submitScore() {
-
-  if(!currentUser)
+  if(!isAdmin())
     return;
 
+  try{
 
-  if(!isJoined()) {
-
-    alert("First join the challenge.");
-
-    return;
-
-  }
-
-
-  if(currentProfile.status !== "ACTIVE") {
-
-    alert("You are eliminated from this challenge.");
-
-    return;
-
-  }
-
-
-  const p =
-    Math.max(
-      0,
-      Number(
-        document.getElementById("physicsInput").value
-      ) || 0
-    );
-
-
-  const c =
-    Math.max(
-      0,
-      Number(
-        document.getElementById("chemistryInput").value
-      ) || 0
-    );
-
-
-  const m =
-    Math.max(
-      0,
-      Number(
-        document.getElementById("mathsInput").value
-      ) || 0
-    );
-
-
-  const minimum =
-
-    p >= challenge.physicsTarget &&
-    c >= challenge.chemistryTarget &&
-    m >= challenge.mathsTarget;
-
-
-  const total =
-    p + c + m;
-
-
-  const submissionId =
-    currentUser.uid +
-    "_" +
-    challenge.id +
-    "_" +
-    challenge.day;
-
-
-  const userRef =
-    db.collection("users")
-      .doc(currentUser.uid);
-
-
-  const submissionRef =
-    db.collection("submissions")
-      .doc(submissionId);
-
-
-  try {
+    const userRef =
+      db.collection("users").doc(uid);
 
     await db.runTransaction(
       async transaction => {
 
-        const submissionSnap =
-          await transaction.get(
-            submissionRef
-          );
-
-
-        if(submissionSnap.exists) {
-
-          throw new Error(
-            "TODAY_ALREADY_SUBMITTED"
-          );
-
-        }
-
-
         const userSnap =
-          await transaction.get(
-            userRef
-          );
+          await transaction.get(userRef);
 
-
-        if(!userSnap.exists) {
-
-          throw new Error(
-            "USER_NOT_FOUND"
-          );
-
-        }
-
+        if(!userSnap.exists)
+          throw new Error("User not found.");
 
         const user =
           userSnap.data();
 
-
-        if(user.status !== "ACTIVE") {
-
-          throw new Error(
-            "NOT_ACTIVE"
+        const startingLives =
+          Number(
+            challenge.startingLives || 2
           );
-
-        }
-
-
-        const oldTotal =
-          user.totalQuestions || 0;
-
-
-        const oldLives =
-          user.lives ?? challenge.startingLives;
-
-
-        let newLives =
-          oldLives;
-
-
-        let newStatus =
-          user.status;
-
-
-        if(!minimum) {
-
-          newLives =
-            Math.max(0, oldLives - 1);
-
-
-          if(newLives === 0) {
-
-            newStatus =
-              "ELIMINATED";
-
-          }
-
-        }
-
 
         transaction.update(
           userRef,
           {
 
-            totalQuestions:
-              oldTotal + total,
+            challengeId:challenge.id,
+
+            status:"ACTIVE",
+
+            joinRequestStatus:"APPROVED",
 
             lives:
-              newLives,
+              user.challengeId === challenge.id &&
+              Number(user.lives) > 0
+                ? Number(user.lives)
+                : startingLives,
 
-            status:
-              newStatus,
+            totalQuestions:
+              Number(user.totalQuestions || 0),
 
-            lastSubmission:
+            joinedAt:
               firebase.firestore.FieldValue.serverTimestamp()
 
           }
         );
-
-
-        transaction.set(
-          submissionRef,
-          {
-
-            uid:
-              currentUser.uid,
-
-            challengeId:
-              challenge.id,
-
-            name:
-              user.name || "Aspirant",
-
-            phase:
-              challenge.phaseName,
-
-            day:
-              challenge.day,
-
-            physics:
-              p,
-
-            chemistry:
-              c,
-
-            maths:
-              m,
-
-            total:
-              total,
-
-            targetCompleted:
-              minimum,
-
-            timestamp:
-              firebase.firestore.FieldValue.serverTimestamp()
-
-          }
-        );
-
-
-        currentProfile.totalQuestions =
-          oldTotal + total;
-
-        currentProfile.lives =
-          newLives;
-
-        currentProfile.status =
-          newStatus;
 
       }
     );
 
+    await db
+      .collection("joinRequests")
+      .doc(requestId)
+      .update({
 
-    updateUserUI();
+        status:"APPROVED",
 
-    disableSubmission();
+        reviewedAt:
+          firebase.firestore.FieldValue.serverTimestamp()
 
+      });
 
-    if(minimum) {
+    toast(
+      "Member approved.",
+      "success"
+    );
 
-      document
-        .getElementById("submitMessage")
-        .innerText =
-          "🎉 TARGET COMPLETED!";
+    renderAdmin();
 
-    }
-
-    else if(
-      currentProfile.status === "ELIMINATED"
-    ) {
-
-      document
-        .getElementById("submitMessage")
-        .innerText =
-          "❌ You have been eliminated.";
-
-    }
-
-    else {
-
-      document
-        .getElementById("submitMessage")
-        .innerText =
-          "⚠️ Target missed. 1 life lost.";
-
-    }
-
-
-    await loadLeaderboard();
-
-  }
-
-  catch(error) {
+  }catch(error){
 
     console.error(error);
 
-
-    if(
-      error.message ===
-      "TODAY_ALREADY_SUBMITTED"
-    ) {
-
-      alert(
-        "You have already submitted today's score."
-      );
-
-      disableSubmission();
-
-      return;
-
-    }
-
-
-    alert(error.message);
+    toast(
+      "Approval failed.",
+      "error"
+    );
 
   }
 
 }
 
 
+window.approveJoin = approveJoin;
+
+
 // ======================================================
-// LEADERBOARD
+// REJECT JOIN
 // ======================================================
 
-async function loadLeaderboard() {
+async function rejectJoin(uid,requestId){
+
+  if(!isAdmin())
+    return;
+
+  try{
+
+    await db
+      .collection("joinRequests")
+      .doc(requestId)
+      .update({
+
+        status:"REJECTED",
+
+        reviewedAt:
+          firebase.firestore.FieldValue.serverTimestamp()
+
+      });
+
+    await db
+      .collection("users")
+      .doc(uid)
+      .update({
+
+        joinRequestStatus:"REJECTED"
+
+      });
+
+    toast(
+      "Join request rejected."
+    );
+
+    renderAdmin();
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Could not reject request.",
+      "error"
+    );
+
+  }
+
+}
+
+
+window.rejectJoin = rejectJoin;
+
+
+// ======================================================
+// DATE / DAY UI
+// ======================================================
+
+function renderClock(){
+
+  const info =
+    calculateDay();
+
+  const dayEl =
+    $("currentDay");
+
+  const dateEl =
+    $("currentDate");
+
+  if(dayEl)
+    dayEl.textContent =
+      dayLabel();
+
+  if(dateEl)
+    dateEl.textContent =
+      currentChallengeDate
+        ? formatDate(currentChallengeDate)
+        : "—";
+
+  const stateEl =
+    $("challengeState");
+
+  if(stateEl)
+    stateEl.textContent =
+      info.state === "ACTIVE"
+        ? `Day ${info.day} • 3:00 AM cycle`
+        : dayLabel();
+
+}
+
+
+setInterval(
+  renderClock,
+  1000
+);
+
+
+// ======================================================
+// MISSED DAY PROCESSING
+// ======================================================
+
+async function processMissedDays(){
 
   if(!currentUser)
     return;
 
+  if(!isJoined())
+    return;
 
-  const snapshot =
+  if(
+    currentProfile.status === "KICKED" ||
+    currentProfile.status === "ELIMINATED"
+  )
+    return;
+
+  const info =
+    calculateDay();
+
+  if(info.state !== "ACTIVE")
+    return;
+
+  const currentDay =
+    info.day;
+
+  if(currentDay <= 1)
+    return;
+
+  const joinedAt =
+    currentProfile.joinedAt;
+
+  let joinedDay = 1;
+
+  if(
+    joinedAt &&
+    joinedAt.toDate
+  ){
+
+    const joinedDate =
+      joinedAt.toDate();
+
+    const parts =
+      new Intl.DateTimeFormat(
+        "en-CA",
+        {
+          timeZone:"Asia/Kolkata",
+          year:"numeric",
+          month:"2-digit",
+          day:"2-digit"
+        }
+      ).formatToParts(joinedDate);
+
+    const o = {};
+
+    parts.forEach(
+      p => o[p.type] = p.value
+    );
+
+    const d =
+      `${o.year}-${o.month}-${o.day}`;
+
+    joinedDay =
+      Math.max(
+        1,
+        diffDays(
+          challenge.startDate,
+          d
+        ) + 1
+      );
+
+  }
+
+  const lastCompletedDay =
+    currentDay - 1;
+
+  if(joinedDay > lastCompletedDay)
+    return;
+
+  for(
+    let day=joinedDay;
+    day<=lastCompletedDay;
+    day++
+  ){
+
+    const submissionRef =
+      db
+        .collection("submissions")
+        .doc(
+          submissionId(
+            currentUser.uid,
+            day
+          )
+        );
+
+    const eventRef =
+      db
+        .collection("lifeEvents")
+        .doc(
+          lifeEventId(
+            currentUser.uid,
+            day
+          )
+        );
+
+    const submissionSnap =
+      await submissionRef.get();
+
+    if(submissionSnap.exists)
+      continue;
+
+    const eventSnap =
+      await eventRef.get();
+
+    if(eventSnap.exists)
+      continue;
+
+    try{
+
+      await db.runTransaction(
+        async transaction => {
+
+          const freshUser =
+            await transaction.get(
+              db.collection("users")
+                .doc(currentUser.uid)
+            );
+
+          const freshEvent =
+            await transaction.get(eventRef);
+
+          const freshSubmission =
+            await transaction.get(
+              submissionRef
+            );
+
+          if(
+            freshEvent.exists ||
+            freshSubmission.exists
+          )
+            return;
+
+          const user =
+            freshUser.data();
+
+          const lives =
+            Math.max(
+              0,
+              Number(user.lives || 0)-1
+            );
+
+          const status =
+            lives <= 0
+              ? "ELIMINATED"
+              : "ACTIVE";
+
+          transaction.update(
+            db.collection("users")
+              .doc(currentUser.uid),
+            {
+
+              lives,
+
+              status,
+
+              lastLifeDeductionDay:day
+
+            }
+          );
+
+          transaction.set(
+            eventRef,
+            {
+
+              uid:currentUser.uid,
+
+              challengeId:
+                challenge.id,
+
+              day,
+
+              reason:
+                "MISSED_DAY",
+
+              createdAt:
+                firebase.firestore.FieldValue.serverTimestamp()
+
+            }
+          );
+
+        }
+      );
+
+    }catch(error){
+
+      console.error(
+        "Missed day error:",
+        error
+      );
+
+    }
+
+  }
+
+  await loadUser();
+
+}
+
+
+// ======================================================
+// SUBMIT DAILY QUESTIONS
+// ======================================================
+
+async function submitQuestions(){
+
+  if(!currentUser || !isJoined()){
+
+    toast(
+      "You must be an approved member.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  if(
+    currentProfile.status === "ELIMINATED"
+  ){
+
+    toast(
+      "You are eliminated.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  const info =
+    calculateDay();
+
+  if(info.state !== "ACTIVE"){
+
+    toast(
+      "Challenge is not active.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  const day =
+    info.day;
+
+  const p =
+    Math.max(
+      0,
+      Number(
+        $("physicsInput")?.value || 0
+      )
+    );
+
+  const c =
+    Math.max(
+      0,
+      Number(
+        $("chemistryInput")?.value || 0
+      )
+    );
+
+  const m =
+    Math.max(
+      0,
+      Number(
+        $("mathsInput")?.value || 0
+      )
+    );
+
+  const total =
+    p+c+m;
+
+  if(total <= 0){
+
+    toast(
+      "Enter at least one question.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  const submissionRef =
+    db
+      .collection("submissions")
+      .doc(
+        submissionId(
+          currentUser.uid,
+          day
+        )
+      );
+
+  const already =
+    await submissionRef.get();
+
+  if(already.exists){
+
+    toast(
+      "Today's questions are already submitted.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  const minimumMet =
+    p >= Number(challenge.physicsTarget || 0) &&
+    c >= Number(challenge.chemistryTarget || 0) &&
+    m >= Number(challenge.mathsTarget || 0);
+
+  try{
+
+    await db.runTransaction(
+      async transaction => {
+
+        const userRef =
+          db
+            .collection("users")
+            .doc(currentUser.uid);
+
+        const userSnap =
+          await transaction.get(userRef);
+
+        const fresh =
+          userSnap.data();
+
+        let lives =
+          Number(fresh.lives || 0);
+
+        let status =
+          fresh.status;
+
+        if(!minimumMet){
+
+          lives =
+            Math.max(
+              0,
+              lives-1
+            );
+
+          if(lives <= 0)
+            status = "ELIMINATED";
+
+        }
+
+        transaction.set(
+          submissionRef,
+          {
+
+            uid:currentUser.uid,
+
+            challengeId:
+              challenge.id,
+
+            day,
+
+            challengeDate:
+              currentChallengeDate,
+
+            physics:p,
+
+            chemistry:c,
+
+            maths:m,
+
+            total,
+
+            minimumMet,
+
+            createdAt:
+              firebase.firestore.FieldValue.serverTimestamp()
+
+          }
+        );
+
+        transaction.update(
+          userRef,
+          {
+
+            physics:
+              Number(fresh.physics || 0)+p,
+
+            chemistry:
+              Number(fresh.chemistry || 0)+c,
+
+            maths:
+              Number(fresh.maths || 0)+m,
+
+            totalQuestions:
+              Number(fresh.totalQuestions || 0)+total,
+
+            lives,
+
+            status,
+
+            lastSubmittedDay:day
+
+          }
+        );
+
+      }
+    );
+
+    await loadUser();
+
+    inputIds.forEach(
+      id => {
+        if($(id))
+          $(id).value = "";
+      }
+    );
+
+    renderAll();
+
+    if(minimumMet){
+
+      toast(
+        "🔥 Daily target completed!",
+        "success"
+      );
+
+    }else{
+
+      toast(
+        "Target missed — 1 life used.",
+        "error"
+      );
+
+    }
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Submission failed.",
+      "error"
+    );
+
+  }
+
+}
+
+
+window.submitQuestions = submitQuestions;
+
+// ======================================================
+// LEADERBOARD
+// ======================================================
+
+async function getLeaderboard(){
+
+  const snap =
     await db
       .collection("users")
       .where(
@@ -1093,412 +1328,1068 @@ async function loadLeaderboard() {
       )
       .get();
 
-
   const users =
-    snapshot.docs.map(doc => ({
-
-      id: doc.id,
-
-      ...doc.data()
-
-    }));
-
-
-  // Highest questions first
+    snap.docs
+      .map(doc => ({
+        id:doc.id,
+        ...doc.data()
+      }))
+      .filter(
+        user =>
+          user.status !== "KICKED"
+      );
 
   users.sort(
     (a,b) =>
-      (b.totalQuestions || 0) -
-      (a.totalQuestions || 0)
+      Number(b.totalQuestions || 0) -
+      Number(a.totalQuestions || 0)
   );
 
+  return users;
 
-  const container =
-    document.getElementById("leaderboard");
-
-
-  container.innerHTML = "";
+}
 
 
-  let activeRank = 0;
+async function renderLeaderboard(){
 
+  const tbody =
+    $("leaderboardBody");
 
-  users.forEach(user => {
+  if(!tbody)
+    return;
 
-    if(user.status === "ACTIVE") {
+  tbody.innerHTML =
+    `<tr>
+      <td colspan="6" class="empty">
+        Loading ranking...
+      </td>
+    </tr>`;
 
-      activeRank++;
+  try{
+
+    const users =
+      await getLeaderboard();
+
+    if(!users.length){
+
+      tbody.innerHTML =
+        `<tr>
+          <td colspan="6" class="empty">
+            No members yet.
+          </td>
+        </tr>`;
+
+      return;
 
     }
 
+    let activeRank = 0;
 
-    const displayRank =
-      user.status === "ACTIVE"
-        ? activeRank
-        : "—";
+    tbody.innerHTML =
+      users
+        .map((user,index) => {
 
+          const eliminated =
+            user.status === "ELIMINATED";
 
-    let medal = "#" + displayRank;
+          if(!eliminated)
+            activeRank++;
 
+          const rank =
+            eliminated
+              ? "—"
+              : activeRank;
 
-    if(activeRank === 1)
-      medal = "🥇";
+          const lives =
+            Math.max(
+              0,
+              Number(user.lives || 0)
+            );
 
-    else if(activeRank === 2)
-      medal = "🥈";
+          let lifeHTML = "";
 
-    else if(activeRank === 3)
-      medal = "🥉";
+          for(
+            let i=0;
+            i<Math.max(
+              Number(challenge.startingLives || 2),
+              lives
+            );
+            i++
+          ){
 
+            lifeHTML +=
+              `<span class="life ${
+                i < lives
+                  ? ""
+                  : "dead"
+              }">❤️</span>`;
 
-    const card =
-      document.createElement("div");
-
-
-    card.className =
-      "rank-card " +
-      (
-        user.status === "ELIMINATED"
-          ? "eliminated"
-          : ""
-      );
-
-
-    card.innerHTML = `
-
-      <div class="rank-number">
-        ${medal}
-      </div>
-
-      <div class="rank-name">
-
-        <strong>
-          ${escapeHTML(user.name || "Aspirant")}
-        </strong>
-
-        <small>
-          ${
-            user.status === "ACTIVE"
-              ? "🟢 ACTIVE"
-              : "❌ ELIMINATED"
           }
-        </small>
 
-      </div>
-
-      <div class="rank-score">
-        ${user.totalQuestions || 0} Q
-      </div>
-
-    `;
-
-
-    container.appendChild(card);
-
-  });
-
-
-  const myIndex =
-    users.findIndex(
-      user =>
-        user.id === currentUser.uid &&
-        user.status === "ACTIVE"
-    );
-
-
-  if(myIndex !== -1) {
-
-    document
-      .getElementById("myRank")
-      .innerText =
-        "#" + (myIndex + 1);
-
-  }
-
-  else {
-
-    document
-      .getElementById("myRank")
-      .innerText = "-";
-
-  }
-
-}
-
-
-// ======================================================
-// SAVE NAME
-// ======================================================
-
-document
-  .getElementById("saveNameBtn")
-  .addEventListener(
-    "click",
-    async () => {
-
-      const newName =
-        document
-          .getElementById("nameInput")
-          .value
-          .trim();
-
-
-      if(!newName) {
-
-        alert("Please enter a name.");
-
-        return;
-
-      }
-
-
-      await db
-        .collection("users")
-        .doc(currentUser.uid)
-        .update({
-
-          name:
-            newName
-
-        });
-
-
-      currentProfile.name =
-        newName;
-
-
-      updateUserUI();
-
-      await loadLeaderboard();
-
-      if(isAdmin())
-        await loadParticipants();
-
-
-      alert("Name updated!");
-
-    }
-  );
-
-
-// ======================================================
-// ADMIN VISIBILITY
-// ======================================================
-
-function updateAdminVisibility() {
-
-  const adminBtn =
-    document.getElementById("adminNavBtn");
-
-
-  if(isAdmin()) {
-
-    adminBtn.classList.remove("hidden");
-
-  }
-
-  else {
-
-    adminBtn.classList.add("hidden");
-
-  }
-
-}
-
-
-// ======================================================
-// LOAD ADMIN FIELDS
-// ======================================================
-
-function loadAdminFields() {
-
-  document.getElementById("adminJoinCode")
-    .value =
-      challenge.joinCode;
-
-  document.getElementById("adminPhaseName")
-    .value =
-      challenge.phaseName;
-
-  document.getElementById("adminDay")
-    .value =
-      challenge.day;
-
-  document.getElementById("adminStartDay")
-    .value =
-      challenge.phaseStartDay;
-
-  document.getElementById("adminEndDay")
-    .value =
-      challenge.phaseEndDay;
-
-  document.getElementById("adminPhysics")
-    .value =
-      challenge.physicsTarget;
-
-  document.getElementById("adminChemistry")
-    .value =
-      challenge.chemistryTarget;
-
-  document.getElementById("adminMaths")
-    .value =
-      challenge.mathsTarget;
-
-  document.getElementById("adminLives")
-    .value =
-      challenge.startingLives;
-
-}
-
-
-// ======================================================
-// SAVE CHALLENGE SETTINGS
-// ======================================================
-
-document
-  .getElementById("saveChallengeBtn")
-  .addEventListener(
-    "click",
-    saveChallengeSettings
-  );
-
-
-async function saveChallengeSettings() {
-
-  if(!isAdmin()) {
-
-    alert("Admin access required.");
-
-    return;
-
-  }
-
-
-  const updated = {
-
-    joinCode:
-      document
-        .getElementById("adminJoinCode")
-        .value
-        .trim()
-        .toUpperCase(),
-
-    phaseName:
-      document
-        .getElementById("adminPhaseName")
-        .value
-        .trim(),
-
-    day:
-      Number(
-        document
-          .getElementById("adminDay")
-          .value
-      ),
-
-    phaseStartDay:
-      Number(
-        document
-          .getElementById("adminStartDay")
-          .value
-      ),
-
-    phaseEndDay:
-      Number(
-        document
-          .getElementById("adminEndDay")
-          .value
-       ),
-
-    physicsTarget:
-      Number(
-        document
-          .getElementById("adminPhysics")
-          .value
-      ),
-
-    chemistryTarget:
-      Number(
-        document
-          .getElementById("adminChemistry")
-          .value
-      ),
-
-    mathsTarget:
-      Number(
-        document
-          .getElementById("adminMaths")
-          .value
-      ),
-
-    startingLives:
-      Number(
-        document
-          .getElementById("adminLives")
-          .value
-      ),
-
-    updatedAt:
-      firebase.firestore.FieldValue.serverTimestamp()
-
-  };
-
-
-  if(!updated.joinCode) {
-
-    alert("Challenge Code cannot be empty.");
-
-    return;
-
-  }
-
-
-  if(!updated.phaseName) {
-
-    alert("Phase Name cannot be empty.");
-
-    return;
-
-  }
-
-
-  try {
-
-    await db
-      .collection("challenges")
-      .doc(challenge.id)
-      .update(updated);
-
-
-    challenge = {
-
-      ...challenge,
-      ...updated
-
-    };
-
-
-    updateChallengeUI();
-
-    loadAdminFields();
-
-    updateJoinUI();
-
-
-    document
-      .getElementById("adminMessage")
-      .innerText =
-        "✅ Challenge settings saved successfully.";
-
-    await checkTodaySubmission();
-
-  }
-
-  catch(error) {
+          return `
+            <tr class="${
+              eliminated
+                ? "eliminated-row"
+                : ""
+            }">
+
+              <td>
+                <span class="rank-number">
+                  ${rank}
+                </span>
+              </td>
+
+              <td>
+                <div class="rank-user">
+
+                  <img
+                    src="${
+                      escapeHTML(
+                        user.photoURL ||
+                        "https://ui-avatars.com/api/?name=" +
+                        encodeURIComponent(
+                          user.name || "A"
+                        )
+                      )
+                    }"
+                  >
+
+                  <div>
+                    <strong>
+                      ${escapeHTML(
+                        user.name || "Aspirant"
+                      )}
+                    </strong>
+
+                    <div class="small muted">
+                      ${
+                        eliminated
+                          ? "ELIMINATED"
+                          : "ACTIVE"
+                      }
+                    </div>
+                  </div>
+
+                </div>
+              </td>
+
+              <td>
+                <strong>
+                  ${Number(
+                    user.totalQuestions || 0
+                  )}
+                </strong>
+              </td>
+
+              <td>
+                ${Number(user.physics || 0)}
+              </td>
+
+              <td>
+                ${Number(user.chemistry || 0)}
+              </td>
+
+              <td>
+                ${Number(user.maths || 0)}
+              </td>
+
+              <td>
+                <div class="lives">
+                  ${lifeHTML}
+                </div>
+              </td>
+
+            </tr>
+          `;
+
+        })
+        .join("");
+
+  }catch(error){
 
     console.error(error);
 
-    alert(error.message);
+    tbody.innerHTML =
+      `<tr>
+        <td colspan="7" class="empty">
+          Ranking could not be loaded.
+        </td>
+      </tr>`;
+
+  }
+
+}
+
+// ======================================================
+// PROFILE
+// ======================================================
+
+function renderProfile(){
+
+  if(!currentProfile)
+    return;
+
+  const name =
+    $("profileName");
+
+  const email =
+    $("profileEmail");
+
+  const photo =
+    $("profilePhoto");
+
+  const status =
+    $("profileStatus");
+
+  const lives =
+    $("profileLives");
+
+  const total =
+    $("profileTotal");
+
+  if(name)
+    name.textContent =
+      currentProfile.name || "Aspirant";
+
+  if(email)
+    email.textContent =
+      currentProfile.email || "";
+
+  if(photo)
+    photo.src =
+      currentProfile.photoURL || "";
+
+  if(status)
+    status.textContent =
+      currentProfile.status || "NOT_JOINED";
+
+  if(lives)
+    lives.textContent =
+      Number(currentProfile.lives || 0);
+
+  if(total)
+    total.textContent =
+      Number(
+        currentProfile.totalQuestions || 0
+      );
+
+}
+
+
+// ======================================================
+// DASHBOARD
+// ======================================================
+
+async function renderDashboard(){
+
+  const info =
+    calculateDay();
+
+  if($("dashboardPhase"))
+    $("dashboardPhase").textContent =
+      challenge.phaseName || "Phase";
+
+  if($("dashboardDay"))
+    $("dashboardDay").textContent =
+      dayLabel();
+
+  if($("dashboardDate"))
+    $("dashboardDate").textContent =
+      currentChallengeDate
+        ? formatDate(currentChallengeDate)
+        : "—";
+
+  if($("dashboardLives"))
+    $("dashboardLives").textContent =
+      currentProfile
+        ? Number(currentProfile.lives || 0)
+        : 0;
+
+  if($("dashboardQuestions"))
+    $("dashboardQuestions").textContent =
+      currentProfile
+        ? Number(currentProfile.totalQuestions || 0)
+        : 0;
+
+  const targetTotal =
+    Number(challenge.physicsTarget || 0) +
+    Number(challenge.chemistryTarget || 0) +
+    Number(challenge.mathsTarget || 0);
+
+  if($("todayTarget"))
+    $("todayTarget").textContent =
+      targetTotal;
+
+  if($("targetPhysics"))
+    $("targetPhysics").textContent =
+      challenge.physicsTarget || 0;
+
+  if($("targetChemistry"))
+    $("targetChemistry").textContent =
+      challenge.chemistryTarget || 0;
+
+  if($("targetMaths"))
+    $("targetMaths").textContent =
+      challenge.mathsTarget || 0;
+
+  renderJoinBox();
+
+}
+
+
+// ======================================================
+// JOIN BOX
+// ======================================================
+
+function renderJoinBox(){
+
+  const box =
+    $("joinBox");
+
+  if(!box)
+    return;
+
+  if(isKicked()){
+
+    box.innerHTML = `
+      <div class="admin-warning">
+        <strong>🚫 You are kicked.</strong>
+        <br>
+        You cannot request to join again until the admin un-kicks you.
+      </div>
+    `;
+
+    return;
+
+  }
+
+  if(isJoined()){
+
+    box.innerHTML = `
+      <div class="status active">
+        ✓ You are an approved member
+      </div>
+    `;
+
+    return;
+
+  }
+
+  if(
+    currentProfile?.joinRequestStatus ===
+    "PENDING"
+  ){
+
+    box.innerHTML = `
+      <div class="status pending">
+        ⏳ Join request pending admin approval
+      </div>
+    `;
+
+    return;
+
+  }
+
+  box.innerHTML = `
+
+    <div class="card request-card">
+
+      <div class="card-title">
+        🔐 Join Challenge
+      </div>
+
+      <p class="muted small">
+        Enter the challenge code and send a request.
+        Admin approval is required.
+      </p>
+
+      <div class="code-input">
+
+        <input
+          id="joinCodeInput"
+          type="text"
+          placeholder="Challenge code"
+        >
+
+        <button
+          class="btn btn-primary"
+          onclick="requestJoin()"
+        >
+          Request Join
+        </button>
+
+      </div>
+
+      ${
+        currentProfile?.joinRequestStatus ===
+        "REJECTED"
+          ? `<p class="small muted" style="margin-top:8px">
+              Previous request was rejected. You may request again.
+             </p>`
+          : ""
+      }
+
+    </div>
+
+  `;
+
+}
+
+
+// ======================================================
+// ADMIN CHALLENGE FORM
+// ======================================================
+
+function fillAdminForm(){
+
+  if(!isAdmin())
+    return;
+
+  if($("adminPhaseName"))
+    $("adminPhaseName").value =
+      challenge.phaseName || "";
+
+  if($("adminJoinCode"))
+    $("adminJoinCode").value =
+      challenge.joinCode || "";
+
+  if($("adminStartDate"))
+    $("adminStartDate").value =
+      challenge.startDate || "";
+
+  if($("adminEndDate"))
+    $("adminEndDate").value =
+      challenge.endDate || "";
+
+  if($("adminPhysicsTarget"))
+    $("adminPhysicsTarget").value =
+      challenge.physicsTarget || 0;
+
+  if($("adminChemistryTarget"))
+    $("adminChemistryTarget").value =
+      challenge.chemistryTarget || 0;
+
+  if($("adminMathsTarget"))
+    $("adminMathsTarget").value =
+      challenge.mathsTarget || 0;
+
+  if($("adminStartingLives"))
+    $("adminStartingLives").value =
+      challenge.startingLives || 2;
+
+  const info =
+    calculateDay();
+
+  if($("adminCurrentDay"))
+    $("adminCurrentDay").textContent =
+      dayLabel();
+
+}
+
+
+async function saveChallenge(){
+
+  if(!isAdmin()){
+
+    toast(
+      "Admin access required.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  const phaseName =
+    ($("adminPhaseName")?.value || "")
+      .trim();
+
+  const joinCode =
+    ($("adminJoinCode")?.value || "")
+      .trim();
+
+  const startDate =
+    $("adminStartDate")?.value;
+
+  const endDate =
+    $("adminEndDate")?.value;
+
+  const physicsTarget =
+    Number(
+      $("adminPhysicsTarget")?.value || 0
+    );
+
+  const chemistryTarget =
+    Number(
+      $("adminChemistryTarget")?.value || 0
+    );
+
+  const mathsTarget =
+    Number(
+      $("adminMathsTarget")?.value || 0
+    );
+
+  const startingLives =
+    Math.max(
+      1,
+      Number(
+        $("adminStartingLives")?.value || 2
+      )
+    );
+
+  if(!phaseName){
+
+    toast(
+      "Enter phase name.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  if(!joinCode){
+
+    toast(
+      "Enter join code.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  if(!startDate || !endDate){
+
+    toast(
+      "Select start and end dates.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  if(endDate < startDate){
+
+    toast(
+      "End date cannot be before start date.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  const updated = {
+
+    ...challenge,
+
+    phaseName,
+
+    joinCode,
+
+    startDate,
+
+    endDate,
+
+    physicsTarget,
+
+    chemistryTarget,
+
+    mathsTarget,
+
+    startingLives
+
+  };
+
+  try{
+
+    await db
+      .collection("challenges")
+      .doc("main")
+      .set(
+        updated,
+        {merge:true}
+      );
+
+    challenge = updated;
+
+    renderAll();
+
+    toast(
+      "Challenge settings saved.",
+      "success"
+    );
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Could not save challenge.",
+      "error"
+    );
+
+  }
+
+}
+
+
+window.saveChallenge = saveChallenge;
+   
+// ======================================================
+// ADMIN LIFE CONTROLS
+// ======================================================
+
+async function updateMemberLife(
+  uid,
+  action,
+  amount=null
+){
+
+  if(!isAdmin())
+    return;
+
+  const ref =
+    db.collection("users").doc(uid);
+
+  try{
+
+    await db.runTransaction(
+      async transaction => {
+
+        const snap =
+          await transaction.get(ref);
+
+        if(!snap.exists)
+          throw new Error("User not found.");
+
+        const user =
+          snap.data();
+
+        let lives =
+          Number(user.lives || 0);
+
+        if(action === "add"){
+
+          lives +=
+            Math.max(
+              1,
+              Number(amount || 1)
+            );
+
+        }
+
+        if(action === "remove"){
+
+          lives =
+            Math.max(
+              0,
+              lives -
+              Math.max(
+                1,
+                Number(amount || 1)
+              )
+            );
+
+        }
+
+        if(action === "set"){
+
+          lives =
+            Math.max(
+              0,
+              Number(amount || 0)
+            );
+
+        }
+
+        let status =
+          user.status;
+
+        // Never destroy KICKED status by changing lives
+        if(status !== "KICKED"){
+
+          status =
+            lives > 0
+              ? "ACTIVE"
+              : "ELIMINATED";
+
+        }
+
+        transaction.update(
+          ref,
+          {
+            lives,
+            status
+          }
+        );
+
+      }
+    );
+
+    toast(
+      "Life updated.",
+      "success"
+    );
+
+    renderAdmin();
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Could not update life.",
+      "error"
+    );
+
+  }
+
+}
+
+
+window.addLife =
+  uid => updateMemberLife(uid,"add",1);
+
+window.removeLife =
+  uid => updateMemberLife(uid,"remove",1);
+
+window.setLife =
+  (uid,amount) =>
+    updateMemberLife(
+      uid,
+      "set",
+      amount
+    );
+
+
+// ======================================================
+// RESTORE ACTIVE
+// ======================================================
+
+async function restoreStatus(uid){
+
+  if(!isAdmin())
+    return;
+
+  try{
+
+    await db
+      .collection("users")
+      .doc(uid)
+      .update({
+
+        status:"ACTIVE"
+
+      });
+
+    toast(
+      "Member restored to ACTIVE.",
+      "success"
+    );
+
+    renderAdmin();
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Could not restore member.",
+      "error"
+    );
+
+  }
+
+}
+
+
+window.restoreStatus = restoreStatus;
+
+
+// ======================================================
+// ELIMINATE
+// ======================================================
+
+async function eliminate(uid){
+
+  if(!isAdmin())
+    return;
+
+  try{
+
+    await db
+      .collection("users")
+      .doc(uid)
+      .update({
+
+        status:"ELIMINATED",
+
+        lives:0
+
+      });
+
+    toast(
+      "Member eliminated."
+    );
+
+    renderAdmin();
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Could not eliminate member.",
+      "error"
+    );
+
+  }
+
+}
+
+
+window.eliminate = eliminate;
+
+
+// ======================================================
+// KICK
+// ======================================================
+
+async function kickMember(uid){
+
+  if(!isAdmin())
+    return;
+
+  try{
+
+    await db
+      .collection("users")
+      .doc(uid)
+      .update({
+
+        status:"KICKED",
+
+        joinRequestStatus:"NONE"
+
+      });
+
+    toast(
+      "Member kicked.",
+      "success"
+    );
+
+    renderAdmin();
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Could not kick member.",
+      "error"
+    );
+
+  }
+
+}
+
+
+window.kickMember = kickMember;
+
+
+// ======================================================
+// UNKICK
+// ======================================================
+
+async function unkickMember(uid){
+
+  if(!isAdmin())
+    return;
+
+  try{
+
+    await db
+      .collection("users")
+      .doc(uid)
+      .update({
+
+        status:"NOT_JOINED",
+
+        challengeId:null,
+
+        joinRequestStatus:"NONE"
+
+      });
+
+    toast(
+      "Member un-kicked. They can request to join again.",
+      "success"
+    );
+
+    renderAdmin();
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Could not unkick member.",
+      "error"
+    );
+
+  }
+
+}
+
+
+window.unkickMember = unkickMember;
+
+
+// ======================================================
+// ADMIN JOIN REQUESTS
+// ======================================================
+
+async function renderJoinRequests(){
+
+  if(!isAdmin())
+    return;
+
+  const box =
+    $("joinRequestsList");
+
+  if(!box)
+    return;
+
+  try{
+
+    const snap =
+      await db
+        .collection("joinRequests")
+        .where(
+          "challengeId",
+          "==",
+          challenge.id
+        )
+        .get();
+
+    const requests =
+      snap.docs
+        .map(doc => ({
+          id:doc.id,
+          ...doc.data()
+        }))
+        .filter(
+          r => r.status === "PENDING"
+        )
+        .sort(
+          (a,b) => {
+
+            const at =
+              a.createdAt?.seconds || 0;
+
+            const bt =
+              b.createdAt?.seconds || 0;
+
+            return bt-at;
+
+          }
+        );
+
+    if(!requests.length){
+
+      box.innerHTML =
+        `<div class="empty">
+          No pending join requests.
+        </div>`;
+
+      return;
+
+    }
+
+    box.innerHTML =
+      requests.map(r => `
+
+        <div class="admin-user">
+
+          <div class="admin-user-head">
+
+            <div class="admin-user-info">
+
+              <img
+                src="${
+                  escapeHTML(
+                    r.photoURL ||
+                    "https://ui-avatars.com/api/?name=" +
+                    encodeURIComponent(
+                      r.name || "A"
+                    )
+                  )
+                }"
+              >
+
+              <div>
+
+                <strong>
+                  ${escapeHTML(
+                    r.name || "Aspirant"
+                  )}
+                </strong>
+
+                <div class="small muted">
+                  ${escapeHTML(
+                    r.email || ""
+                  )}
+                </div>
+
+              </div>
+
+            </div>
+
+            <span class="status pending">
+              PENDING
+            </span>
+
+          </div>
+
+          <div class="admin-actions">
+
+            <button
+              class="btn btn-success btn-small"
+              onclick="approveJoin(
+                '${r.uid}',
+                '${r.id}'
+              )"
+            >
+              ✓ Approve
+            </button>
+
+            <button
+              class="btn btn-danger btn-small"
+              onclick="rejectJoin(
+                '${r.uid}',
+                '${r.id}'
+              )"
+            >
+              ✕ Reject
+            </button>
+
+          </div>
+
+        </div>
+
+      `).join("");
+
+  }catch(error){
+
+    console.error(error);
+
+    box.innerHTML =
+      `<div class="empty">
+        Could not load requests.
+      </div>`;
 
   }
 
@@ -1509,296 +2400,894 @@ async function saveChallengeSettings() {
 // ADMIN PARTICIPANTS
 // ======================================================
 
-async function loadParticipants() {
+async function renderParticipants(){
 
   if(!isAdmin())
     return;
 
+  const box =
+    $("participantsList");
 
-  const snapshot =
-    await db
-      .collection("users")
+  if(!box)
+    return;
+
+  try{
+
+    const snap =
+      await db
+        .collection("users")
+        .where(
+          "challengeId",
+          "==",
+          challenge.id
+        )
+        .get();
+
+    const users =
+      snap.docs
+        .map(doc => ({
+          id:doc.id,
+          ...doc.data()
+        }))
+        .sort(
+          (a,b) =>
+            String(a.name || "")
+              .localeCompare(
+                String(b.name || "")
+              )
+        );
+
+    if(!users.length){
+
+      box.innerHTML =
+        `<div class="empty">
+          No participants.
+        </div>`;
+
+      return;
+
+    }
+
+    box.innerHTML =
+      users.map(user => {
+
+        const lives =
+          Number(user.lives || 0);
+
+        const status =
+          user.status || "ACTIVE";
+
+        return `
+
+          <div class="admin-user">
+
+            <div class="admin-user-head">
+
+              <div class="admin-user-info">
+
+                <img
+                  src="${
+                    escapeHTML(
+                      user.photoURL ||
+                      "https://ui-avatars.com/api/?name=" +
+                      encodeURIComponent(
+                        user.name || "A"
+                      )
+                    )
+                  }"
+                >
+
+                <div>
+
+                  <strong>
+                    ${escapeHTML(
+                      user.name || "Aspirant"
+                    )}
+                  </strong>
+
+                  <div class="small muted">
+                    ${Number(
+                      user.totalQuestions || 0
+                    )} questions
+                    • ${lives} lives
+                  </div>
+
+                </div>
+
+              </div>
+
+              <span class="status ${
+                status === "ACTIVE"
+                  ? "active"
+                  : status === "ELIMINATED"
+                    ? "eliminated"
+                    : "kicked"
+              }">
+                ${escapeHTML(status)}
+              </span>
+
+            </div>
+
+            <div class="admin-actions">
+
+              <button
+                class="btn btn-success btn-small"
+                onclick="addLife('${user.id}')"
+              >
+                +1 Life
+              </button>
+
+              <button
+                class="btn btn-warning btn-small"
+                onclick="removeLife('${user.id}')"
+              >
+                −1 Life
+              </button>
+
+              <button
+                class="btn btn-secondary btn-small"
+                onclick="
+                  const n = prompt(
+                    'Set lives to:',
+                    '${lives}'
+                  );
+                  if(n !== null)
+                    setLife(
+                      '${user.id}',
+                      Number(n)
+                    );
+                "
+              >
+                Set Lives
+              </button>
+
+              ${
+                status === "ELIMINATED"
+                  ? `
+                    <button
+                      class="btn btn-success btn-small"
+                      onclick="restoreStatus('${user.id}')"
+                    >
+                      ♻ Restore Active
+                    </button>
+                  `
+                  : ""
+              }
+
+              ${
+                status !== "KICKED"
+                  ? `
+                    <button
+                      class="btn btn-danger btn-small"
+                      onclick="kickMember('${user.id}')"
+                    >
+                      🚫 Kick
+                    </button>
+                  `
+                  : `
+                    <button
+                      class="btn btn-success btn-small"
+                      onclick="unkickMember('${user.id}')"
+                    >
+                      ♻ Unkick
+                    </button>
+                  `
+              }
+
+              ${
+                status !== "ELIMINATED"
+                  ? `
+                    <button
+                      class="btn btn-danger btn-small"
+                      onclick="eliminate('${user.id}')"
+                    >
+                      Eliminate
+                    </button>
+                  `
+                  : ""
+              }
+
+            </div>
+
+          </div>
+
+        `;
+
+      }).join("");
+
+  }catch(error){
+
+    console.error(error);
+
+    box.innerHTML =
+      `<div class="empty">
+        Could not load participants.
+      </div>`;
+
+  }
+
+}
+
+
+// ======================================================
+// ADMIN
+// ======================================================
+
+async function renderAdmin(){
+
+  const adminSection =
+    $("adminSection");
+
+  if(!adminSection)
+    return;
+
+  if(!isAdmin()){
+
+    adminSection.innerHTML =
+      `
+        <div class="card admin-warning">
+          Admin access required.
+        </div>
+      `;
+
+    return;
+
+  }
+
+  fillAdminForm();
+
+  await renderJoinRequests();
+
+  await renderParticipants();
+
+}
+
+
+// ======================================================
+// CHAT
+// ======================================================
+
+function startChat(){
+
+  if(chatUnsubscribe)
+    chatUnsubscribe();
+
+  const box =
+    $("chatMessages");
+
+  if(!box)
+    return;
+
+  if(!isJoined()){
+
+    box.innerHTML =
+      `<div class="empty">
+        Join the challenge to access chat.
+      </div>`;
+
+    return;
+
+  }
+
+  chatUnsubscribe =
+    db
+      .collection("messages")
       .where(
         "challengeId",
         "==",
         challenge.id
       )
-      .get();
+      .orderBy(
+        "createdAt",
+        "asc"
+      )
+      .limitToLast(100)
+      .onSnapshot(
+        snapshot => {
 
+          box.innerHTML = "";
 
-  const participants =
-    snapshot.docs.map(doc => ({
+          snapshot.docs.forEach(
+            doc => {
 
-      id: doc.id,
+              const msg =
+                doc.data();
 
-      ...doc.data()
+              const mine =
+                msg.uid ===
+                currentUser.uid;
 
-    }));
+              const wrapper =
+                document.createElement("div");
 
+              wrapper.className =
+                `message ${
+                  mine ? "me" : ""
+                }`;
 
-  participants.sort(
-    (a,b) =>
-      (b.totalQuestions || 0) -
-      (a.totalQuestions || 0)
-  );
+              const photo =
+                msg.photoURL ||
+                "https://ui-avatars.com/api/?name=" +
+                encodeURIComponent(
+                  msg.name || "A"
+                );
 
+              let content = "";
 
-  const container =
-    document.getElementById(
-      "participantsList"
-    );
+              if(msg.type === "voice"){
 
+                content = `
+                  <audio
+                    controls
+                    src="${escapeHTML(
+                      msg.audioURL || ""
+                    )}"
+                  ></audio>
+                `;
 
-  container.innerHTML = "";
+              }else{
 
+                content =
+                  escapeHTML(
+                    msg.text || ""
+                  );
 
-  if(participants.length === 0) {
+              }
 
-    container.innerHTML =
-      `<p class="admin-muted">
-        No participants have joined yet.
-      </p>`;
+              wrapper.innerHTML = `
 
-    return;
+                <img
+                  src="${escapeHTML(photo)}"
+                >
 
-  }
+                <div class="message-body">
 
-  
-  participants.forEach((user,index) => {
+                  <div class="message-name">
+                    ${escapeHTML(
+                      msg.name || "Aspirant"
+                    )}
+                  </div>
 
-    const card =
-      document.createElement("div");
+                  <div class="message-bubble">
+                    ${content}
+                  </div>
 
-    card.className =
-      "participant-card";
+                </div>
 
+              `;
 
-    const active =
-      user.status === "ACTIVE";
+              box.appendChild(wrapper);
 
+            }
+          );
 
-    card.innerHTML = `
+          box.scrollTop =
+            box.scrollHeight;
 
-      <div class="participant-info">
+        },
+        error => {
 
-        <strong>
-          #${index + 1}
-          &nbsp;
-          ${escapeHTML(user.name || "Aspirant")}
-        </strong>
-
-        <small>
-          ${escapeHTML(user.email || "")}
-        </small>
-
-      </div>
-
-      <div class="participant-stats">
-
-        <strong>
-          ${user.totalQuestions || 0} Q
-        </strong>
-
-        <small>
-          ❤️ ${user.lives ?? 0}
-          &nbsp; • &nbsp;
-          ${active ? "🟢 ACTIVE" : "❌ ELIMINATED"}
-        </small>
-
-      </div>
-
-      <button
-        class="admin-action"
-        data-uid="${user.id}"
-        data-action="${active ? "eliminate" : "restore"}"
-      >
-        ${active ? "❌ Eliminate" : "♻️ Restore"}
-      </button>
-
-    `;
-
-
-    container.appendChild(card);
-
-  });
-
-
-  container
-    .querySelectorAll(".admin-action")
-    .forEach(button => {
-
-      button.addEventListener(
-        "click",
-        async () => {
-
-          const uid =
-            button.dataset.uid;
-
-          const action =
-            button.dataset.action;
-
-
-          await changeParticipantStatus(
-            uid,
-            action
+          console.error(
+            "Chat error:",
+            error
           );
 
         }
       );
 
-    });
-
 }
 
 
-// ======================================================
-// ADMIN CHANGE STATUS
-// ======================================================
+async function sendMessage(){
 
-async function changeParticipantStatus(
-  uid,
-  action
-) {
+  if(!isJoined()){
 
-  if(!isAdmin())
+    toast(
+      "Only challenge members can chat.",
+      "error"
+    );
+
     return;
 
+  }
 
-  const newStatus =
-    action === "eliminate"
-      ? "ELIMINATED"
-      : "ACTIVE";
+  const input =
+    $("chatInput");
 
+  if(!input)
+    return;
 
-  try {
+  const text =
+    input.value.trim();
+
+  if(!text)
+    return;
+
+  try{
 
     await db
-      .collection("users")
-      .doc(uid)
-      .update({
+      .collection("messages")
+      .add({
 
-        status:
-          newStatus
+        challengeId:
+          challenge.id,
+
+        uid:
+          currentUser.uid,
+
+        name:
+          currentProfile.name,
+
+        photoURL:
+          currentProfile.photoURL || "",
+
+        type:"text",
+
+        text,
+
+        createdAt:
+          firebase.firestore.FieldValue.serverTimestamp()
 
       });
 
+    input.value = "";
 
-    await loadParticipants();
-
-    await loadLeaderboard();
-
-  }
-
-  catch(error) {
+  }catch(error){
 
     console.error(error);
 
-    alert(error.message);
+    toast(
+      "Message could not be sent.",
+      "error"
+    );
 
   }
 
 }
 
 
+window.sendMessage = sendMessage;
+
+
 // ======================================================
-// REFRESH PARTICIPANTS
+// VOICE MESSAGE
 // ======================================================
 
-document
-  .getElementById("refreshParticipantsBtn")
-  .addEventListener(
-    "click",
-    loadParticipants
-  );
+async function toggleVoiceRecording(){
+
+  if(!isJoined()){
+
+    toast(
+      "Only challenge members can use voice chat.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  const button =
+    $("voiceButton");
+
+  if(voiceRecorder){
+
+    voiceRecorder.stop();
+
+    if(button){
+
+      button.classList.remove(
+        "recording"
+      );
+
+      button.textContent =
+        "🎙️";
+
+    }
+
+    return;
+
+  }
+
+  if(
+    !navigator.mediaDevices ||
+    !navigator.mediaDevices.getUserMedia
+  ){
+
+    toast(
+      "Voice recording is not supported.",
+      "error"
+    );
+
+    return;
+
+  }
+
+  try{
+
+    const stream =
+      await navigator.mediaDevices
+        .getUserMedia({
+          audio:true
+        });
+
+    voiceChunks = [];
+
+    voiceRecorder =
+      new MediaRecorder(stream);
+
+    voiceRecorder.ondataavailable =
+      event => {
+
+        if(event.data.size > 0)
+          voiceChunks.push(
+            event.data
+          );
+
+      };
+
+    voiceRecorder.onstop =
+      async () => {
+
+        stream
+          .getTracks()
+          .forEach(
+            track => track.stop()
+          );
+
+        const blob =
+          new Blob(
+            voiceChunks,
+            {
+              type:
+                voiceRecorder.mimeType ||
+                "audio/webm"
+            }
+          );
+
+        voiceRecorder = null;
+
+        await uploadVoice(blob);
+
+      };
+
+    voiceRecorder.start();
+
+    if(button){
+
+      button.classList.add(
+        "recording"
+      );
+
+      button.textContent =
+        "⏹️";
+
+    }
+
+    toast(
+      "Recording started..."
+    );
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Microphone permission denied.",
+      "error"
+    );
+
+  }
+
+}
+
+
+window.toggleVoiceRecording =
+  toggleVoiceRecording;
+
+
+async function uploadVoice(blob){
+
+  try{
+
+    const filename =
+      `voice/${challenge.id}/${currentUser.uid}/${Date.now()}.webm`;
+
+    const ref =
+      storage.ref().child(filename);
+
+    await ref.put(
+      blob,
+      {
+        contentType:
+          blob.type || "audio/webm"
+      }
+    );
+
+    const url =
+      await ref.getDownloadURL();
+
+    await db
+      .collection("messages")
+      .add({
+
+        challengeId:
+          challenge.id,
+
+        uid:
+          currentUser.uid,
+
+        name:
+          currentProfile.name,
+
+        photoURL:
+          currentProfile.photoURL || "",
+
+        type:"voice",
+
+        audioURL:url,
+
+        createdAt:
+          firebase.firestore.FieldValue.serverTimestamp()
+
+      });
+
+    toast(
+      "Voice message sent.",
+      "success"
+    );
+
+  }catch(error){
+
+    console.error(error);
+
+    toast(
+      "Voice message upload failed.",
+      "error"
+    );
+
+  }
+
+}
 
 
 // ======================================================
 // NAVIGATION
 // ======================================================
 
-document
-  .querySelectorAll(".nav-btn")
-  .forEach(button => {
+function showSection(id){
 
-    button.addEventListener(
-      "click",
-      () => {
+  document
+    .querySelectorAll(".section")
+    .forEach(
+      section =>
+        section.classList.remove("active")
+    );
 
-        const page =
-          button.dataset.page;
+  const section =
+    $(id);
 
+  if(section)
+    section.classList.add("active");
 
-        if(
-          page === "admin" &&
-          !isAdmin()
-        ) {
+  document
+    .querySelectorAll(".nav button")
+    .forEach(
+      button => {
 
-          alert("Admin access required.");
-
-          return;
-
-        }
-
-
-        document
-          .querySelectorAll(".page")
-          .forEach(section => {
-
-            section.classList.add("hidden");
-
-          });
-
-
-        document
-          .getElementById(page)
-          .classList.remove("hidden");
-
-
-        document
-          .querySelectorAll(".nav-btn")
-          .forEach(btn => {
-
-            btn.classList.remove("active");
-
-          });
-
-
-        button.classList.add("active");
-
-
-        if(page === "ranking") {
-
-          loadLeaderboard();
-
-        }
-
-
-        if(page === "admin") {
-
-          loadAdminFields();
-
-          loadParticipants();
-
-        }
+        button.classList.toggle(
+          "active",
+          button.dataset.section === id
+        );
 
       }
     );
 
-  });
+  if(id === "rankSection")
+    renderLeaderboard();
 
+  if(id === "adminSection")
+    renderAdmin();
 
-// ======================================================
-// HTML ESCAPE
-// ======================================================
-
-function escapeHTML(text) {
-
-  const div =
-    document.createElement("div");
-
-  div.textContent =
-    text ?? "";
-
-  return div.innerHTML;
+  if(id === "chatSection")
+    startChat();
 
 }
+
+
+window.showSection = showSection;
+
+
+// ======================================================
+// RENDER ALL
+// ======================================================
+
+async function renderAll(){
+
+  renderClock();
+
+  renderProfile();
+
+  await renderDashboard();
+
+  await renderLeaderboard();
+
+  await renderAdmin();
+
+  startChat();
+
+}
+
+
+// ======================================================
+// AUTH STATE
+// ======================================================
+
+auth.onAuthStateChanged(
+  async user => {
+
+    currentUser = user;
+
+    const loginScreen =
+      $("loginScreen");
+
+    const app =
+      $("app");
+
+    if(!user){
+
+      if(loginScreen)
+        loginScreen.classList.remove(
+          "hidden"
+        );
+
+      if(app)
+        app.classList.add(
+          "hidden"
+        );
+
+      return;
+
+    }
+
+    try{
+
+      if(loginScreen)
+        loginScreen.classList.add(
+          "hidden"
+        );
+
+      if(app)
+        app.classList.remove(
+          "hidden"
+        );
+
+      await loadChallenge();
+
+      await loadUser();
+
+      await processMissedDays();
+
+      await loadUser();
+
+      renderAll();
+
+    }catch(error){
+
+      console.error(error);
+
+      toast(
+        "Could not initialize app.",
+        "error"
+      );
+
+    }
+
+  }
+);
+
+
+// ======================================================
+// AUTOMATIC REFRESH
+// ======================================================
+
+setInterval(
+  async () => {
+
+    if(!currentUser)
+      return;
+
+    const oldDate =
+      currentChallengeDate;
+
+    const oldDay =
+      currentChallengeDay;
+
+    const info =
+      calculateDay();
+
+    currentChallengeDay =
+      info.day;
+
+    if(
+      oldDate !== currentChallengeDate ||
+      oldDay !== currentChallengeDay
+    ){
+
+      await loadUser();
+
+      await processMissedDays();
+
+      await loadUser();
+
+      renderAll();
+
+    }
+
+  },
+  15000
+);
+
+
+// ======================================================
+// INITIAL UI HOOKS
+// ======================================================
+
+document.addEventListener(
+  "DOMContentLoaded",
+  () => {
+
+    const sendButton =
+      $("sendMessageButton");
+
+    if(sendButton){
+
+      sendButton.addEventListener(
+        "click",
+        sendMessage
+      );
+
+    }
+
+    const chatInput =
+      $("chatInput");
+
+    if(chatInput){
+
+      chatInput.addEventListener(
+        "keydown",
+        event => {
+
+          if(
+            event.key === "Enter" &&
+            !event.shiftKey
+          ){
+
+            event.preventDefault();
+
+            sendMessage();
+
+          }
+
+        }
+      );
+
+    }
+
+    const voiceButton =
+      $("voiceButton");
+
+    if(voiceButton){
+
+      voiceButton.addEventListener(
+        "click",
+        toggleVoiceRecording
+      );
+
+    }
+
+    renderClock();
+
+  }
+);
+
+  
